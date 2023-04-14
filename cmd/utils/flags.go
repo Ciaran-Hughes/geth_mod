@@ -860,6 +860,13 @@ var (
 		Category: flags.NetworkingCategory,
 	}
 
+	WhitelistFilePathFlag = &cli.StringFlag{
+		Name:     "whitelist.file",
+		Usage:    "Path to file containing allowed Whitelisted addresses, json-encoded list of strings. Default assumes CWD is repo's root",
+		Value:    "whitelist_addresses.json",
+		Category: flags.NetworkingCategory,
+	}
+
 	// Console
 	JSpathFlag = &flags.DirectoryFlag{
 		Name:     "jspath",
