@@ -195,11 +195,14 @@ func (p *Peer) markTransaction(hash common.Hash) {
 // The reasons this is public is to allow packages using this protocol to write
 // tests that directly send messages without having to do the async queueing.
 func (p *Peer) SendTransactions(txs types.Transactions) error {
-	// Mark all the transactions as known, but ensure we don't overflow our limits
+
+	var newtxs types.Transactions
+
 	for _, tx := range txs {
+		// Mark all the transactions as known, but ensure we don't overflow our limits
 		p.knownTxs.Add(tx.Hash())
 
-		// Check that the txs sender or to addresses are in the whitelist
+		// Check that the txs sender and to addresses are in the whitelist
 		// Only propagate whitelisted transactions
 		signer := types.LatestSignerForChainID(tx.ChainId())
 
@@ -207,18 +210,20 @@ func (p *Peer) SendTransactions(txs types.Transactions) error {
 		if err == nil {
 			if _, present := p.wl.WhitelistedAddresses[from]; present {
 				log.Info("transaction from whitelisted address %s", from.String())
+				newtxs = append(newtxs, tx)
 			}
 		}
 		to := tx.To()
 		if to != nil {
 			if _, present := p.wl.WhitelistedAddresses[*to]; present {
 				log.Info("transaction to whitelisted address %s", to.String())
+				newtxs = append(newtxs, tx)
 			}
 		}
 
 	}
 
-	return p2p.Send(p.rw, TransactionsMsg, txs)
+	return p2p.Send(p.rw, TransactionsMsg, newtxs)
 }
 
 // AsyncSendTransactions queues a list of transactions (by hash) to eventually
@@ -243,7 +248,35 @@ func (p *Peer) AsyncSendTransactions(hashes []common.Hash) {
 func (p *Peer) sendPooledTransactionHashes66(hashes []common.Hash) error {
 	// Mark all the transactions as known, but ensure we don't overflow our limits
 	p.knownTxs.Add(hashes...)
-	return p2p.Send(p.rw, NewPooledTransactionHashesMsg, NewPooledTransactionHashesPacket66(hashes))
+
+	var newhashes []common.Hash
+
+	for _, hash := range hashes {
+		if tx := p.txpool.Get(hash); tx != nil {
+
+			// Check that the txs sender and to addresses are in the whitelist
+			// Only propagate whitelisted transaction hashes
+			signer := types.LatestSignerForChainID(tx.ChainId())
+
+			from, err := signer.Sender(tx)
+			if err == nil {
+				if _, present := p.wl.WhitelistedAddresses[from]; present {
+					log.Info("transaction from whitelisted address %s", from.String())
+					newhashes = append(newhashes, tx.Hash())
+				}
+			}
+			to := tx.To()
+			if to != nil {
+				if _, present := p.wl.WhitelistedAddresses[*to]; present {
+					log.Info("transaction to whitelisted address %s", to.String())
+					newhashes = append(newhashes, tx.Hash())
+				}
+			}
+
+		}
+	}
+
+	return p2p.Send(p.rw, NewPooledTransactionHashesMsg, NewPooledTransactionHashesPacket66(newhashes))
 }
 
 // sendPooledTransactionHashes68 sends transaction hashes (tagged with their type
@@ -523,6 +556,58 @@ func (p *Peer) RequestTxs(hashes []common.Hash) error {
 		GetPooledTransactionsPacket: hashes,
 	})
 }
+
+// Deteremine if Transaction Hash has an address on the whitelist
+func (p *Peer) IsWhitelistedHash(Sender func(*types.Transaction) (common.Address, error), hash common.Hash) bool {
+
+	if tx := p.txpool.Get(hash); tx != nil {
+
+		// Check that the txs sender and to addresses are in the whitelist
+		// Only propagate whitelisted transaction hashes
+		from, err := Sender(tx)
+		if err == nil {
+			if _, present := p.wl.WhitelistedAddresses[from]; present {
+				//log.Info("transaction from whitelisted address %s", from.String())
+				return true
+			}
+		}
+		to := tx.To()
+		if to != nil {
+			if _, present := p.wl.WhitelistedAddresses[*to]; present {
+				//log.Info("transaction to whitelisted address %s", to.String())
+				return true
+			}
+		}
+
+	}
+	return false
+}
+
+// Determine if the transaction has an address on the whitelist
+func (p *Peer) IsWhitelistedTx(Sender func(*types.Transaction) (common.Address, error), tx *types.Transaction) bool {
+
+	// Check that the txs sender and to addresses are in the whitelist
+	// Only propagate whitelisted transaction hashes
+	from, err := Sender(tx)
+	if err == nil {
+		if _, present := p.wl.WhitelistedAddresses[from]; present {
+			//log.Info("transaction from whitelisted address %s", from.String())
+			return true
+		}
+	}
+	to := tx.To()
+	if to != nil {
+		if _, present := p.wl.WhitelistedAddresses[*to]; present {
+			//log.Info("transaction to whitelisted address %s", to.String())
+			return true
+		}
+	}
+
+	return false
+}
+
+// Make functions to return a list of hashes or a list of transactions on whitelist.
+// Use these functions in the SendTransactions functions above.
 
 // knownCache is a cache for known hashes.
 type knownCache struct {
