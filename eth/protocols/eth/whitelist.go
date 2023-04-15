@@ -18,8 +18,8 @@ const (
 
 // Whitelist contains relevant information about the Whitelist parameters
 type Whitelist struct {
-	WhitelistFilePath    string
-	WhitelistedAddresses map[common.Address]bool // a map for optimized complexity of operations
+	WhitelistFilePath    string                  // Path of the whitelist file.
+	WhitelistedAddresses map[common.Address]bool // Use a map for optimized complexity of operations
 }
 
 // Make a New Whitelist and initialize it

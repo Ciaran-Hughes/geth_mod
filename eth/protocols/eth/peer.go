@@ -24,6 +24,7 @@ import (
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
 )
@@ -90,11 +91,14 @@ type Peer struct {
 
 	term chan struct{} // Termination channel to stop the broadcasters
 	lock sync.RWMutex  // Mutex protecting the internal fields
+	wl   Whitelist
 }
 
 // NewPeer create a wrapper for a network connection and negotiated  protocol
 // version.
 func NewPeer(version uint, p *p2p.Peer, rw p2p.MsgReadWriter, txpool TxPool) *Peer {
+
+	wl := NewWhitelist()
 	peer := &Peer{
 		id:              p.ID().String(),
 		Peer:            p,
@@ -111,6 +115,7 @@ func NewPeer(version uint, p *p2p.Peer, rw p2p.MsgReadWriter, txpool TxPool) *Pe
 		resDispatch:     make(chan *response),
 		txpool:          txpool,
 		term:            make(chan struct{}),
+		wl:              *wl,
 	}
 	// Start up all the broadcasters
 	go peer.broadcastBlocks()
@@ -193,7 +198,26 @@ func (p *Peer) SendTransactions(txs types.Transactions) error {
 	// Mark all the transactions as known, but ensure we don't overflow our limits
 	for _, tx := range txs {
 		p.knownTxs.Add(tx.Hash())
+
+		// Check that the txs sender or to addresses are in the whitelist
+		// Only propagate whitelisted transactions
+		signer := types.LatestSignerForChainID(tx.ChainId())
+
+		from, err := signer.Sender(tx)
+		if err == nil {
+			if _, present := p.wl.WhitelistedAddresses[from]; present {
+				log.Info("transaction from whitelisted address %s", from.String())
+			}
+		}
+		to := tx.To()
+		if to != nil {
+			if _, present := p.wl.WhitelistedAddresses[*to]; present {
+				log.Info("transaction to whitelisted address %s", to.String())
+			}
+		}
+
 	}
+
 	return p2p.Send(p.rw, TransactionsMsg, txs)
 }
 
