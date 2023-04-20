@@ -24,7 +24,6 @@ import (
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
 )
@@ -196,32 +195,14 @@ func (p *Peer) markTransaction(hash common.Hash) {
 // tests that directly send messages without having to do the async queueing.
 func (p *Peer) SendTransactions(txs types.Transactions) error {
 
-	var newtxs types.Transactions
 
 	for _, tx := range txs {
 		// Mark all the transactions as known, but ensure we don't overflow our limits
 		p.knownTxs.Add(tx.Hash())
-
-		// Check that the txs sender and to addresses are in the whitelist
-		// Only propagate whitelisted transactions
-		signer := types.LatestSignerForChainID(tx.ChainId())
-
-		from, err := signer.Sender(tx)
-		if err == nil {
-			if _, present := p.wl.WhitelistedAddresses[from]; present {
-				log.Info("transaction from whitelisted address %s", from.String())
-				newtxs = append(newtxs, tx)
-			}
-		}
-		to := tx.To()
-		if to != nil {
-			if _, present := p.wl.WhitelistedAddresses[*to]; present {
-				log.Info("transaction to whitelisted address %s", to.String())
-				newtxs = append(newtxs, tx)
-			}
-		}
-
 	}
+
+	// Return the whitelisted transactions 
+	newtxs := p.wl.ReturnWhitelistTxs(txs)
 
 	return p2p.Send(p.rw, TransactionsMsg, newtxs)
 }
@@ -249,32 +230,7 @@ func (p *Peer) sendPooledTransactionHashes66(hashes []common.Hash) error {
 	// Mark all the transactions as known, but ensure we don't overflow our limits
 	p.knownTxs.Add(hashes...)
 
-	var newhashes []common.Hash
-
-	for _, hash := range hashes {
-		if tx := p.txpool.Get(hash); tx != nil {
-
-			// Check that the txs sender and to addresses are in the whitelist
-			// Only propagate whitelisted transaction hashes
-			signer := types.LatestSignerForChainID(tx.ChainId())
-
-			from, err := signer.Sender(tx)
-			if err == nil {
-				if _, present := p.wl.WhitelistedAddresses[from]; present {
-					log.Info("transaction from whitelisted address %s", from.String())
-					newhashes = append(newhashes, tx.Hash())
-				}
-			}
-			to := tx.To()
-			if to != nil {
-				if _, present := p.wl.WhitelistedAddresses[*to]; present {
-					log.Info("transaction to whitelisted address %s", to.String())
-					newhashes = append(newhashes, tx.Hash())
-				}
-			}
-
-		}
-	}
+	newhashes := p.wl.ReturnWhitelistHashes(p.txpool.Get, hashes)
 
 	return p2p.Send(p.rw, NewPooledTransactionHashesMsg, NewPooledTransactionHashesPacket66(newhashes))
 }
@@ -289,7 +245,10 @@ func (p *Peer) sendPooledTransactionHashes66(hashes []common.Hash) error {
 func (p *Peer) sendPooledTransactionHashes68(hashes []common.Hash, types []byte, sizes []uint32) error {
 	// Mark all the transactions as known, but ensure we don't overflow our limits
 	p.knownTxs.Add(hashes...)
-	return p2p.Send(p.rw, NewPooledTransactionHashesMsg, NewPooledTransactionHashesPacket68{Types: types, Sizes: sizes, Hashes: hashes})
+
+	newhashes, newtypes, newsizes := p.wl.ReturnWhitelistHashes68(p.txpool.Get, hashes)
+
+	return p2p.Send(p.rw, NewPooledTransactionHashesMsg, NewPooledTransactionHashesPacket68{Types: newtypes, Sizes: newsizes, Hashes: newhashes})
 }
 
 // AsyncSendPooledTransactionHashes queues a list of transactions hashes to eventually
@@ -310,10 +269,12 @@ func (p *Peer) ReplyPooledTransactionsRLP(id uint64, hashes []common.Hash, txs [
 	// Mark all the transactions as known, but ensure we don't overflow our limits
 	p.knownTxs.Add(hashes...)
 
+	newtxs := p.wl.ReturnTransactionsRLP(txs)
+
 	// Not packed into PooledTransactionsPacket to avoid RLP decoding
 	return p2p.Send(p.rw, PooledTransactionsMsg, &PooledTransactionsRLPPacket66{
 		RequestId:                   id,
-		PooledTransactionsRLPPacket: txs,
+		PooledTransactionsRLPPacket: newtxs,
 	})
 }
 
@@ -555,55 +516,6 @@ func (p *Peer) RequestTxs(hashes []common.Hash) error {
 		RequestId:                   id,
 		GetPooledTransactionsPacket: hashes,
 	})
-}
-
-// Deteremine if Transaction Hash has an address on the whitelist
-func (p *Peer) IsWhitelistedHash(Sender func(*types.Transaction) (common.Address, error), hash common.Hash) bool {
-
-	if tx := p.txpool.Get(hash); tx != nil {
-
-		// Check that the txs sender and to addresses are in the whitelist
-		// Only propagate whitelisted transaction hashes
-		from, err := Sender(tx)
-		if err == nil {
-			if _, present := p.wl.WhitelistedAddresses[from]; present {
-				//log.Info("transaction from whitelisted address %s", from.String())
-				return true
-			}
-		}
-		to := tx.To()
-		if to != nil {
-			if _, present := p.wl.WhitelistedAddresses[*to]; present {
-				//log.Info("transaction to whitelisted address %s", to.String())
-				return true
-			}
-		}
-
-	}
-	return false
-}
-
-// Determine if the transaction has an address on the whitelist
-func (p *Peer) IsWhitelistedTx(Sender func(*types.Transaction) (common.Address, error), tx *types.Transaction) bool {
-
-	// Check that the txs sender and to addresses are in the whitelist
-	// Only propagate whitelisted transaction hashes
-	from, err := Sender(tx)
-	if err == nil {
-		if _, present := p.wl.WhitelistedAddresses[from]; present {
-			//log.Info("transaction from whitelisted address %s", from.String())
-			return true
-		}
-	}
-	to := tx.To()
-	if to != nil {
-		if _, present := p.wl.WhitelistedAddresses[*to]; present {
-			//log.Info("transaction to whitelisted address %s", to.String())
-			return true
-		}
-	}
-
-	return false
 }
 
 // Make functions to return a list of hashes or a list of transactions on whitelist.
