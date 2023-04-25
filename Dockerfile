@@ -1,33 +1,31 @@
-# Support setting various labels on the final image
-ARG COMMIT=""
-ARG VERSION=""
-ARG BUILDNUM=""
+# Download base image ubuntu 22.04
+FROM ubuntu:22.04
 
-# Build Geth in a stock Go builder container
-FROM golang:1.20-alpine as builder
 
-RUN apk add --no-cache gcc musl-dev linux-headers git
+# Install git and C-compiler and latest go needed for geth
+RUN apt-get -y update && \
+    apt-get -y install git \
+    build-essential \
+    make \
+    gcc  \
+    wget && \
+    wget  https://go.dev/dl/go1.20.2.linux-amd64.tar.gz && \
+    tar -xvf go1.20.2.linux-amd64.tar.gz && \
+    mv go /usr/local  
 
-# Get dependencies - will also be cached if we won't change go.mod/go.sum
-COPY go.mod /go-ethereum/
-COPY go.sum /go-ethereum/
-RUN cd /go-ethereum && go mod download
 
-ADD . /go-ethereum
-RUN cd /go-ethereum && go run build/ci.go install -static ./cmd/geth
+# Configure Go
+ENV GOROOT /usr/local/go 
+ENV GOPATH /go 
+ENV PATH $GOROOT/bin:$PATH
 
-# Pull Geth into a second stage deploy alpine container
-FROM alpine:latest
+# Download and install geth version 
+# Change this line to clone forked version of geth
+RUN git clone https://github.com/Ciaran-Hughes/geth_wp
+RUN cd go-ethereum && \
+    make geth && \
+    cp ./build/bin/geth /usr/local/bin/
 
-RUN apk add --no-cache ca-certificates
-COPY --from=builder /go-ethereum/build/bin/geth /usr/local/bin/
-
+# Expose ports and entrypoint
 EXPOSE 8545 8546 30303 30303/udp
 ENTRYPOINT ["geth"]
-
-# Add some metadata labels to help programatic image consumption
-ARG COMMIT=""
-ARG VERSION=""
-ARG BUILDNUM=""
-
-LABEL commit="$COMMIT" version="$VERSION" buildnum="$BUILDNUM"

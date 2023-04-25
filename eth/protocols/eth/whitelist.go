@@ -10,6 +10,9 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
+// TODO: Implement test code to make sure the functions work as expected. 
+// Test on local build testnet. 
+
 // Hardcode the whitelist_addresses.json file path
 // Todo: Make this a command line flag parameter
 
