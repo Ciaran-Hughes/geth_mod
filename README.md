@@ -13,10 +13,17 @@ The mempool is not altered in this version of geth, so that MEV strategies can b
 
 ## Usage 
 
-To build a local version of whitelist-propagation geth as the execution client and the official lighthouse as the consensus client, follow the instructions at [https://github.com/Ciaran-Hughes/ETHNode_Docker](https://github.com/Ciaran-Hughes/ETHNode_Docker) with the docker files in the current repo. 
+To build a standalone version of geth with this whitelisted feature, clone this repo and
+```
+make geth 
+```
+
+Then run the geth executable as usual. 
+
+To build a docker-compose version of whitelist-propagation geth as the execution client, and the official lighthouse as the consensus client, follow the instructions at [https://github.com/Ciaran-Hughes/ETHNode_Docker](https://github.com/Ciaran-Hughes/ETHNode_Docker) with the docker files in the current repo. 
 
 <!--
-% Put whitelisted in the persistent directory. 
+% If running in docker, put whitelisted in the persistent directory. 
 -->
 Add the addresses which should be whitelisted to the "whitelisted_addresses.json" file in a json array format. Docker-compose up and then run as normal.   
 
