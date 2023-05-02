@@ -26,6 +26,8 @@ RUN cd go-ethereum && \
     make geth && \
     cp ./build/bin/geth /usr/local/bin/
 
+ADD whitelist_addresses.json /usr/local/bin/
+
 # Expose ports and entrypoint
 EXPOSE 8545 8546 30303 30303/udp
 ENTRYPOINT ["geth"]

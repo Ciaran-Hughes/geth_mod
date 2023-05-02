@@ -35,8 +35,8 @@ func NewWhitelist() *Whitelist {
 	}
 
 	wl.ReadWhitelistFile()
-	log.Info("Read in whitelist file ", wl.WhitelistFilePath,
-		". Only allowing these addresses in transaction/hash propagation")
+	//log.Info("Read in whitelist file ", wl.WhitelistFilePath,
+	//	". Only allowing these addresses in transaction/hash propagation")
 
 	return wl
 }
