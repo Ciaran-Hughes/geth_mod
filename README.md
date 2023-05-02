@@ -18,7 +18,7 @@ To build a standalone version of geth with this whitelisted feature, clone this 
 make geth 
 ```
 
-Then run the geth executable as usual. 
+Then run the geth executable as usual. Afterwards, whitelisted geth can be connected to MetaMask on a localnode. 
 
 To build a docker-compose version of whitelist-propagation geth as the execution client, and the official lighthouse as the consensus client, follow the instructions at [https://github.com/Ciaran-Hughes/ETHNode_Docker](https://github.com/Ciaran-Hughes/ETHNode_Docker) with the docker files in the current repo. 
 
